@@ -194,7 +194,6 @@ function VehiclePopup(props: VehiclePopupProps) {
         {vehicle.nextStop.name ? (
           <>
             <dd>Name: {vehicle.nextStop.name}</dd>
-            <br />
             <dd>
               Expected Arival Time:
               {vehicle.nextStop.expectedArivalTime
