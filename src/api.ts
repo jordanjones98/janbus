@@ -5,7 +5,19 @@ import {
   VehicleWrapper,
   VehicleCallJson,
 } from "./types";
-const key = "96ba60cb-017c-4110-8701-c284c612d5ca";
+const key = process.env.REACT_APP_API_KEY;
+
+/** Error raised when an unexpected API error occurs */
+export class ApiError extends Error {
+  __proto__ = Error;
+  response?: Response;
+  constructor(message: string, response?: Response) {
+    super(message);
+    Object.setPrototypeOf(this, ApiError.prototype);
+    this.name = "ApiError";
+    this.response = response;
+  }
+}
 
 /**
  * Call an API based on the endpoint and the request init params
@@ -15,6 +27,11 @@ async function call(
   init?: RequestInit | undefined
 ): Promise<Response> {
   const response = await fetch(resource, init);
+
+  if (!response.ok) {
+    throw new ApiError(`${response.status} ${response.statusText}`, response);
+  }
+
   return response;
 }
 

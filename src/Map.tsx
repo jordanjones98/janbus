@@ -1,12 +1,12 @@
-import { useRef, useEffect, useState } from "react";
-import logo from "./logo.svg";
+import { useEffect, useState } from "react";
 import "./App.css";
 import api from "./api";
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
-import { LatLngExpression } from "leaflet";
+import { MapContainer, TileLayer, Marker, Popup, useMap } from "react-leaflet";
+import { LatLngExpression, LatLngTuple } from "leaflet";
 import * as L from "leaflet";
 import { Vehicle, Line } from "./types";
 import LinePicker from "./LinePicker";
+import { ApiError } from "./api";
 type VehiclePopupProps = {
   vehicle: Vehicle;
 };
@@ -23,9 +23,34 @@ export default function RenderMap() {
   const [lineId, setLineId] = useState<string>("");
   const [lines] = useState<Array<Line>>([]);
   const [lastUpdatedTime, setLastUpdatedTime] = useState<Date>();
-  const long = -122.42965439805562;
-  const lat = 37.753237220890355;
+  const [apiError, setApiError] = useState<ApiError>();
+  const center: LatLngTuple = [37.81018163225775, -122.26181599563523];
+  // 61 seconds because API only allows 60 requests an hour (one every 60 seconds) and want to mitigate race conditions
   const MINUTE_MS = 61000;
+
+  /**
+   * Layer that uses the useMap hook to pan to the average coordinate of the filtered vehicles
+   */
+  function PanLayer() {
+    const map = useMap();
+    if (filteredVehicles.length > 0) {
+      const { lat, long } = filteredVehicles.reduce(
+        (acc, vehicle) => {
+          acc.lat += vehicle.location.lat;
+          acc.long += vehicle.location.long;
+          return acc;
+        },
+        { lat: 0, long: 0 }
+      );
+      let length = filteredVehicles.length;
+
+      const avLat = lat / length;
+      const avLong = long / length;
+      map.flyTo([avLat, avLong]);
+    }
+
+    return <></>;
+  }
 
   /**
    * Reload bus data
@@ -56,6 +81,7 @@ export default function RenderMap() {
           setVehicles(vehicles);
           setLastUpdatedTime(new Date());
         })
+        .catch((e: ApiError) => setApiError(e))
         .finally(() => setIsLoading(false));
     }
   }, [isLoading]);
@@ -105,37 +131,47 @@ export default function RenderMap() {
 
   return (
     <>
-      <MapContainer
-        className="map"
-        center={[lat, long]}
-        zoom={13}
-        scrollWheelZoom={true}
-      >
+      {apiError ? (
         <>
-          <TileLayer
-            attribution={`&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. Last updated at ${lastUpdatedTime?.toLocaleTimeString()}`}
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-          />
-          {filteredVehicles &&
-            filteredVehicles.map((vehicle, key) => {
-              addLine(vehicle);
-              const position = [
-                vehicle.location.lat,
-                vehicle.location.long,
-              ] as LatLngExpression;
-              return (
-                <Marker
-                  icon={getIcon(vehicle.markerIcon)}
-                  position={position}
-                  key={key}
-                >
-                  <VehiclePopup vehicle={vehicle} />
-                </Marker>
-              );
-            })}
+          <h1>An API Error has Occured:</h1>
+          <h3>{apiError.message}</h3>
         </>
-      </MapContainer>
-      <LinePicker lines={lines} onLineChange={handleLineChange} />
+      ) : (
+        <>
+          <MapContainer
+            className="map"
+            center={center}
+            zoom={12}
+            scrollWheelZoom={true}
+          >
+            <>
+              <PanLayer />
+              <TileLayer
+                attribution={`&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors. Last updated at ${lastUpdatedTime?.toLocaleTimeString()}`}
+                url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+              />
+              {filteredVehicles &&
+                filteredVehicles.map((vehicle, key) => {
+                  addLine(vehicle);
+                  const position = [
+                    vehicle.location.lat,
+                    vehicle.location.long,
+                  ] as LatLngExpression;
+                  return (
+                    <Marker
+                      icon={getIcon(vehicle.markerIcon)}
+                      position={position}
+                      key={key}
+                    >
+                      <VehiclePopup vehicle={vehicle} />
+                    </Marker>
+                  );
+                })}
+            </>
+          </MapContainer>
+          <LinePicker lines={lines} onLineChange={handleLineChange} />
+        </>
+      )}
     </>
   );
 }
@@ -147,35 +183,29 @@ function VehiclePopup(props: VehiclePopupProps) {
   const vehicle = props.vehicle;
   return (
     <Popup>
-      <>
-        <b>Vehicle information:</b>
-        <hr />
-        <b>Line Name:</b> {vehicle.lineName}
-        <br />
-        <b>Direction:</b> {vehicle.prettyDirection}
-        <br />
-        <b>Origin:</b> {vehicle.origin}
-        <br />
-        <b>Destination:</b> {vehicle.destination}
-        <br />
-        <b>Occupancy:</b> {vehicle.occupancy}
-        <br />
-        <br />
-        <b>Next Stop:</b>
-        <hr />
+      <dl>
+        <dt>Vehicle information:</dt>
+        <dd>Line Name: {vehicle.lineName}</dd>
+        <dd>Direction: {vehicle.prettyDirection}</dd>
+        <dd>Origin: {vehicle.origin}</dd>
+        <dd>Destination: {vehicle.destination}</dd>
+        <dd>Occupancy: {vehicle.occupancy}</dd>
+        <dt>Next Stop:</dt>
         {vehicle.nextStop.name ? (
           <>
-            <b>Name:</b> {vehicle.nextStop.name}
+            <dd>Name: {vehicle.nextStop.name}</dd>
             <br />
-            <b>Expected Arival Time:</b>{" "}
-            {vehicle.nextStop.expectedArivalTime
-              ? vehicle.nextStop.expectedArivalTime.toLocaleTimeString()
-              : "Unknown"}
+            <dd>
+              Expected Arival Time:
+              {vehicle.nextStop.expectedArivalTime
+                ? vehicle.nextStop.expectedArivalTime.toLocaleTimeString()
+                : "Unknown"}
+            </dd>
           </>
         ) : (
           <>Not Available</>
         )}
-      </>
+      </dl>
     </Popup>
   );
 }
